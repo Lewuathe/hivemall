@@ -23,10 +23,10 @@ jdk:
   - oraclejdk7
   - oraclejdk8
 
-branches:
-  only:
-    - master
-    - develop
+#branches:
+#  only:
+#    - master
+#    - develop
 
 notifications:
   email: false
