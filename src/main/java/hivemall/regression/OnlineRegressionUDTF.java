@@ -33,6 +33,7 @@ import hivemall.utils.hadoop.HiveUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -62,6 +63,8 @@ public abstract class OnlineRegressionUDTF extends LearnerBaseUDTF {
 
     protected PredictionModel model;
     protected int count;
+    protected FeatureValue[] accDelta;
+    protected Random rnd;
 
     @Override
     public StructObjectInspector initialize(ObjectInspector[] argOIs) throws UDFArgumentException {
@@ -82,6 +85,8 @@ public abstract class OnlineRegressionUDTF extends LearnerBaseUDTF {
         }
 
         this.count = 0;
+        this.accDelta = null;
+        this.rnd = new Random(42);
         return getReturnOI(featureOutputOI);
     }
 
@@ -120,6 +125,9 @@ public abstract class OnlineRegressionUDTF extends LearnerBaseUDTF {
     public void process(Object[] args) throws HiveException {
         List<?> features = (List<?>) featureListOI.getList(args[0]);
         FeatureValue[] featureVector = parseFeatures(features);
+        if (accDelta == null) {
+            accDelta = new FeatureValue[featureVector.length];
+        }
         if(featureVector == null) {
             return;
         }
@@ -235,18 +243,51 @@ public abstract class OnlineRegressionUDTF extends LearnerBaseUDTF {
         throw new IllegalStateException();
     }
 
-    protected void update(@Nonnull final FeatureValue[] features, float coeff) {
-        for(FeatureValue f : features) {// w[i] += y * x[i]
-            if(f == null) {
+    protected IWeightValue getNewWeight(@Nullable final IWeightValue old, final float xi, final float delta) {
+        throw new IllegalStateException();
+    }
+
+
+    protected void accumulateDelta(@Nonnull final FeatureValue[] features, float coeff) {
+        for (int i = 0; i < features.length; i++) {
+            if (features[i] == null) {
                 continue;
             }
-            final Object x = f.getFeature();
-            final float xi = f.getValue();
-
-            float old_w = model.getWeight(x);
-            float new_w = old_w + (coeff * xi);
-            model.set(x, new WeightValue(new_w));
+            final Object x = features[i].getFeature();
+            final float xi = features[i].getValue();
+            float delta = xi * coeff;
+            if (accDelta[i] == null) {
+                accDelta[i] = new FeatureValue(x, delta);
+            } else {
+                accDelta[i].setValue(accDelta[i].getValue() + delta);
+            }
         }
+    }
+
+    protected void resetAccDelta() {
+        for (FeatureValue f : accDelta) {
+            f.setValue(0.f);
+        }
+    }
+
+    protected void update(@Nonnull final FeatureValue[] features, float coeff) {
+        assert features.length == accDelta.length;
+        if (rnd.nextFloat() < mini_batch_ratio) {
+            accumulateDelta(features, coeff);
+        }
+
+        // In the last of mini batch, model is updated according
+        // to accumulated delta.
+            for (int i = 0; i < accDelta.length; i++) {
+                final Object x = features[i].getFeature();
+                final float xi = features[i].getValue();
+                final float delta = accDelta[i].getValue();
+                IWeightValue old_w = model.get(x);
+                IWeightValue new_w = getNewWeight(old_w, xi, delta);
+                model.set(x, new_w);
+            }
+
+        resetAccDelta();
     }
 
     @Override

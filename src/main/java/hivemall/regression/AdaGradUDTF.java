@@ -86,15 +86,12 @@ public final class AdaGradUDTF extends OnlineRegressionUDTF {
     }
 
     @Override
-    protected void update(@Nonnull final FeatureValue[] features, float target, float predicted) {
-        float gradient = LossFunctions.logisticLoss(target, predicted);
-        update(features, gradient);
+    protected float computeUpdate(float target, float predicted) {
+        return LossFunctions.logisticLoss(target, predicted);
     }
 
     @Override
     protected void update(@Nonnull final FeatureValue[] features, float gradient) {
-        final float g_g = gradient * (gradient / scaling);
-
         for(FeatureValue f : features) {// w[i] += y * x[i]
             if(f == null) {
                 continue;
@@ -103,13 +100,14 @@ public final class AdaGradUDTF extends OnlineRegressionUDTF {
             float xi = f.getValue();
 
             IWeightValue old_w = model.get(x);
-            IWeightValue new_w = getNewWeight(old_w, xi, gradient, g_g);
+            IWeightValue new_w = getNewWeight(old_w, xi, gradient);
             model.set(x, new_w);
         }
     }
 
     @Nonnull
-    protected IWeightValue getNewWeight(@Nullable final IWeightValue old, final float xi, final float gradient, final float g_g) {
+    protected IWeightValue getNewWeight(@Nullable final IWeightValue old, final float xi, final float gradient) {
+        final float g_g = gradient * (gradient / scaling);
         float old_w = 0.f;
         float scaled_sum_sqgrad = 0.f;
 
